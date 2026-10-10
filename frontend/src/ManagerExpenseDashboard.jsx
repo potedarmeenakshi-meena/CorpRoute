@@ -1,113 +1,82 @@
 import { useEffect, useState } from "react";
+import API_URL from "./api";
 
 function ManagerExpenseDashboard() {
   const [expenses, setExpenses] = useState([]);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [updatingId, setUpdatingId] = useState(null);
+  const [filter, setFilter] = useState("All");
 
-  // Get all expenses
+  const getAuthHeaders = () => ({
+    Authorization: `Bearer ${localStorage.getItem("corproute-token") || ""}`,
+  });
+
   const fetchExpenses = async () => {
     try {
       setLoading(true);
       setError("");
 
-      const response = await fetch(
-        "http://localhost:5000/api/expenses"
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch expenses");
-      }
+      const response = await fetch(`${API_URL}/api/expenses`, {
+        headers: getAuthHeaders(),
+      });
 
       const data = await response.json();
 
-      setExpenses(data);
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to load expenses.");
+      }
+
+      setExpenses(Array.isArray(data) ? data : []);
     } catch (err) {
+      console.error(err);
       setError(
-        "Unable to load expenses. Make sure the backend is running."
+        err.message || "Unable to load expenses. Check the backend connection."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // Load expenses when page opens
-  useEffect(() => {
-    fetchExpenses();
-  }, []);
-
-  // Approve or reject expense
-  const updateExpenseStatus = async (id, status) => {
+  const updateExpenseStatus = async (expenseId, status) => {
     try {
-      setMessage("");
+      setUpdatingId(expenseId);
       setError("");
 
       const response = await fetch(
-        `http://localhost:5000/api/expenses/${id}/status`,
+        `${API_URL}/api/expenses/${expenseId}/status`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            ...getAuthHeaders(),
           },
-          body: JSON.stringify({
-            status: status,
-          }),
+          body: JSON.stringify({ status }),
         }
       );
 
       const data = await response.json();
 
       if (!response.ok) {
-        setError(
-          data.message || "Failed to update expense."
-        );
-        return;
+        throw new Error(data.message || "Failed to update expense status.");
       }
 
-      setMessage(
-        `Expense ${status.toLowerCase()} successfully.`
+      setExpenses((previousExpenses) =>
+        previousExpenses.map((expense) =>
+          expense.id === expenseId ? { ...expense, status } : expense
+        )
       );
-
-      fetchExpenses();
     } catch (err) {
-      setError("Unable to update expense status.");
+      console.error(err);
+      setError(err.message || "Unable to update expense status.");
+    } finally {
+      setUpdatingId(null);
     }
   };
 
-  // Search + filter
-  const filteredExpenses = expenses.filter((expense) => {
-    const searchText = search.toLowerCase();
-
-    const matchesSearch =
-      expense.employeeName
-        .toLowerCase()
-        .includes(searchText) ||
-      expense.destination
-        .toLowerCase()
-        .includes(searchText) ||
-      expense.category
-        .toLowerCase()
-        .includes(searchText) ||
-      expense.travelRequestId
-        .toLowerCase()
-        .includes(searchText);
-
-    const matchesStatus =
-      statusFilter === "All" ||
-      expense.status === statusFilter;
-
-    return matchesSearch && matchesStatus;
-  });
-
-  // Statistics
-  const totalAmount = expenses.reduce(
-    (sum, expense) =>
-      sum + Number(expense.amount),
-    0
-  );
+  useEffect(() => {
+    fetchExpenses();
+  }, []);
 
   const pendingExpenses = expenses.filter(
     (expense) => expense.status === "Pending"
@@ -121,303 +90,336 @@ function ManagerExpenseDashboard() {
     (expense) => expense.status === "Rejected"
   );
 
+  const totalAmount = expenses.reduce(
+    (sum, expense) => sum + Number(expense.amount || 0),
+    0
+  );
+
   const pendingAmount = pendingExpenses.reduce(
-    (sum, expense) =>
-      sum + Number(expense.amount),
+    (sum, expense) => sum + Number(expense.amount || 0),
     0
   );
 
   const approvedAmount = approvedExpenses.reduce(
-    (sum, expense) =>
-      sum + Number(expense.amount),
+    (sum, expense) => sum + Number(expense.amount || 0),
     0
   );
 
-  const rejectedAmount = rejectedExpenses.reduce(
-    (sum, expense) =>
-      sum + Number(expense.amount),
-    0
-  );
+  const filteredExpenses =
+    filter === "All"
+      ? expenses
+      : expenses.filter((expense) => expense.status === filter);
+
+  const formatAmount = (amount) =>
+    `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+
+  const formatDate = (date) => {
+    if (!date) return "N/A";
+
+    const parsedDate = new Date(date);
+
+    return Number.isNaN(parsedDate.getTime())
+      ? "N/A"
+      : parsedDate.toLocaleDateString("en-IN");
+  };
 
   return (
-    <div className="manager-expense-page">
-
-      {/* HEADER */}
+    <div className="manager-dashboard-page">
       <div className="page-header">
-
         <div>
-          <span className="page-label">
-            MANAGER
-          </span>
-
-          <h1>Expense Approval</h1>
-
-          <p>
-            Review employee expenses and approve or
-            reject reimbursement requests.
-          </p>
+          <span className="page-label">MANAGER</span>
+          <h1>Expense Management</h1>
+          <p>Review employee expenses and manage reimbursement approvals.</p>
         </div>
 
         <button
+          type="button"
           className="refresh-btn"
           onClick={fetchExpenses}
+          disabled={loading}
         >
           🔄 Refresh
         </button>
-
       </div>
 
-      {/* STATISTICS */}
-      <div className="expense-stats">
+      {error && <div className="error-message">❌ {error}</div>}
 
-        <div className="expense-stat-card">
-          <div className="stat-icon">💰</div>
-
+      <div className="dashboard-section">
+        <div className="section-heading">
           <div>
-            <span>Total Expenses</span>
-            <h2>
-              ₹{totalAmount.toLocaleString()}
-            </h2>
-            <small>
-              {expenses.length} requests
-            </small>
+            <span className="page-label">OVERVIEW</span>
+            <h2>Expense Summary</h2>
           </div>
         </div>
 
-        <div className="expense-stat-card">
-          <div className="stat-icon">⏳</div>
+        <div className="expense-stats">
+          <StatCard
+            icon="💰"
+            label="Total Expenses"
+            value={formatAmount(totalAmount)}
+            description={`${expenses.length} expense requests`}
+          />
 
-          <div>
-            <span>Pending</span>
-            <h2>
-              ₹{pendingAmount.toLocaleString()}
-            </h2>
-            <small>
-              {pendingExpenses.length} requests
-            </small>
-          </div>
+          <StatCard
+            icon="⏳"
+            label="Pending"
+            value={formatAmount(pendingAmount)}
+            description={`${pendingExpenses.length} awaiting approval`}
+          />
+
+          <StatCard
+            icon="✅"
+            label="Approved"
+            value={formatAmount(approvedAmount)}
+            description={`${approvedExpenses.length} approved`}
+          />
+
+          <StatCard
+            icon="❌"
+            label="Rejected"
+            value={rejectedExpenses.length}
+            description="Rejected requests"
+          />
         </div>
-
-        <div className="expense-stat-card">
-          <div className="stat-icon">✅</div>
-
-          <div>
-            <span>Approved</span>
-            <h2>
-              ₹{approvedAmount.toLocaleString()}
-            </h2>
-            <small>
-              {approvedExpenses.length} requests
-            </small>
-          </div>
-        </div>
-
-        <div className="expense-stat-card">
-          <div className="stat-icon">❌</div>
-
-          <div>
-            <span>Rejected</span>
-            <h2>
-              ₹{rejectedAmount.toLocaleString()}
-            </h2>
-            <small>
-              {rejectedExpenses.length} requests
-            </small>
-          </div>
-        </div>
-
       </div>
 
-      {/* MESSAGES */}
-      {message && (
-        <div className="success-message">
-          ✅ {message}
+      <div className="dashboard-section">
+        <div className="section-heading">
+          <div>
+            <span className="page-label">REVIEW</span>
+            <h2>Employee Expense Requests</h2>
+          </div>
         </div>
-      )}
 
-      {error && (
-        <div className="error-message">
-          ❌ {error}
-        </div>
-      )}
-
-      {/* SEARCH AND FILTER */}
-      <div className="expense-filters">
-
-        <input
-          type="text"
-          placeholder="🔍 Search employee, destination, category..."
-          value={search}
-          onChange={(e) =>
-            setSearch(e.target.value)
-          }
-        />
-
-        <select
-          value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(e.target.value)
-          }
+        <div
+          style={{
+            display: "flex",
+            gap: "10px",
+            flexWrap: "wrap",
+            marginBottom: "22px",
+          }}
         >
-          <option value="All">All Status</option>
-          <option value="Pending">Pending</option>
-          <option value="Approved">Approved</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-
-      </div>
-
-      {/* EXPENSE LIST */}
-      {loading ? (
-        <div className="empty-state">
-          <h2>Loading expenses...</h2>
-          <p>Please wait.</p>
-        </div>
-      ) : filteredExpenses.length === 0 ? (
-        <div className="empty-state">
-
-          <div className="empty-icon">
-            💰
-          </div>
-
-          <h2>No expenses found</h2>
-
-          <p>
-            There are no expenses matching your
-            current filters.
-          </p>
-
-        </div>
-      ) : (
-        <div className="manager-expense-list">
-
-          {filteredExpenses.map((expense) => (
-
-            <div
-              className="manager-expense-card"
-              key={expense.id}
+          {["All", "Pending", "Approved", "Rejected"].map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => setFilter(status)}
+              style={{
+                padding: "10px 16px",
+                borderRadius: "8px",
+                border: "1px solid #dbe2ea",
+                background: filter === status ? "#3158c9" : "#ffffff",
+                color: filter === status ? "#ffffff" : "#334155",
+                fontWeight: "600",
+                cursor: "pointer",
+              }}
             >
-
-              {/* EXPENSE HEADER */}
-              <div className="expense-card-top">
-
-                <div>
-                  <span className="expense-category">
-                    {expense.category}
-                  </span>
-
-                  <h2>
-                    ₹
-                    {Number(
-                      expense.amount
-                    ).toLocaleString()}
-                  </h2>
-                </div>
-
-                <span
-                  className={`expense-status ${expense.status.toLowerCase()}`}
-                >
-                  {expense.status}
-                </span>
-
-              </div>
-
-              {/* DETAILS */}
-              <div className="expense-details">
-
-                <div>
-                  <span>Employee</span>
-
-                  <strong>
-                    {expense.employeeName}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Destination</span>
-
-                  <strong>
-                    {expense.destination}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Expense Date</span>
-
-                  <strong>
-                    {new Date(
-                      expense.expenseDate
-                    ).toLocaleDateString()}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Travel Request</span>
-
-                  <strong>
-                    #
-                    {expense.travelRequestId.slice(
-                      0,
-                      8
-                    )}
-                  </strong>
-                </div>
-
-              </div>
-
-              {/* DESCRIPTION */}
-              {expense.description && (
-                <div className="expense-description">
-
-                  <span>Description</span>
-
-                  <p>
-                    {expense.description}
-                  </p>
-
-                </div>
-              )}
-
-              {/* APPROVE / REJECT */}
-              {expense.status === "Pending" && (
-                <div className="expense-actions">
-
-                  <button
-                    className="approve-btn"
-                    onClick={() =>
-                      updateExpenseStatus(
-                        expense.id,
-                        "Approved"
-                      )
-                    }
-                  >
-                    ✅ Approve
-                  </button>
-
-                  <button
-                    className="reject-btn"
-                    onClick={() =>
-                      updateExpenseStatus(
-                        expense.id,
-                        "Rejected"
-                      )
-                    }
-                  >
-                    ❌ Reject
-                  </button>
-
-                </div>
-              )}
-
-            </div>
-
+              {status}
+              {status === "All"
+                ? ` (${expenses.length})`
+                : ` (${
+                    expenses.filter((expense) => expense.status === status)
+                      .length
+                  })`}
+            </button>
           ))}
-
         </div>
-      )}
 
+        {loading ? (
+          <div className="empty-state">
+            <h2>Loading expenses...</h2>
+            <p>Please wait while we fetch expense requests.</p>
+          </div>
+        ) : filteredExpenses.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">🧾</div>
+            <h2>No expense requests found</h2>
+            <p>Expense requests matching this filter will appear here.</p>
+          </div>
+        ) : (
+          <div className="manager-request-list">
+            {filteredExpenses.map((expense) => {
+              const status = expense.status || "Pending";
+              const isPending = status.toLowerCase() === "pending";
+              const isUpdating = updatingId === expense.id;
+
+              return (
+                <div
+                  className="manager-request-card"
+                  key={expense.id}
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "16px",
+                    padding: "24px",
+                    marginBottom: "18px",
+                    boxShadow: "0 4px 18px rgba(15, 23, 42, 0.07)",
+                    border: "1px solid #e5e7eb",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: "16px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>
+                      <span className="expense-category">
+                        {expense.category ||
+                          expense.expenseType ||
+                          "Employee Expense"}
+                      </span>
+
+                      <h2 style={{ margin: "12px 0 8px" }}>
+                        {expense.employeeName ||
+                          expense.fullName ||
+                          expense.username ||
+                          "Employee"}
+                      </h2>
+
+                      <p style={{ margin: 0, color: "#64748b" }}>
+                        {expense.description ||
+                          expense.purpose ||
+                          "No description provided"}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`expense-status ${status.toLowerCase()}`}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "20px",
+                        fontWeight: "600",
+                        background:
+                          status === "Approved"
+                            ? "#dcfce7"
+                            : status === "Rejected"
+                              ? "#fee2e2"
+                              : "#fef3c7",
+                        color:
+                          status === "Approved"
+                            ? "#166534"
+                            : status === "Rejected"
+                              ? "#991b1b"
+                              : "#92400e",
+                      }}
+                    >
+                      {status}
+                    </span>
+                  </div>
+
+                  <div
+                    className="request-details"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(130px, 1fr))",
+                      gap: "18px",
+                      marginTop: "24px",
+                      paddingTop: "20px",
+                      borderTop: "1px solid #e5e7eb",
+                    }}
+                  >
+                    <Detail
+                      label="Amount"
+                      value={formatAmount(expense.amount)}
+                    />
+
+                    <Detail
+                      label="Expense Date"
+                      value={formatDate(
+                        expense.expenseDate ||
+                          expense.date ||
+                          expense.createdAt
+                      )}
+                    />
+
+                    <Detail
+                      label="Request ID"
+                      value={`#${String(expense.id || "").slice(0, 8) || "N/A"}`}
+                    />
+                  </div>
+
+                  {isPending && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                        marginTop: "24px",
+                        paddingTop: "18px",
+                        borderTop: "1px solid #e5e7eb",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() =>
+                          updateExpenseStatus(expense.id, "Approved")
+                        }
+                        style={buttonStyle("#16a34a", isUpdating)}
+                      >
+                        {isUpdating ? "Updating..." : "✅ Approve"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() =>
+                          updateExpenseStatus(expense.id, "Rejected")
+                        }
+                        style={buttonStyle("#dc2626", isUpdating)}
+                      >
+                        {isUpdating ? "Updating..." : "❌ Reject"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
+}
+
+function StatCard({ icon, label, value, description }) {
+  return (
+    <div className="expense-stat-card">
+      <div className="stat-icon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <h2>{value}</h2>
+        <small>{description}</small>
+      </div>
+    </div>
+  );
+}
+
+function Detail({ label, value }) {
+  return (
+    <div>
+      <span style={{ color: "#64748b", display: "block" }}>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function buttonStyle(background, disabled) {
+  return {
+    background,
+    color: "#ffffff",
+    border: "none",
+    padding: "12px 22px",
+    borderRadius: "8px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontWeight: "600",
+    fontSize: "15px",
+    opacity: disabled ? 0.6 : 1,
+  };
 }
 
 export default ManagerExpenseDashboard;

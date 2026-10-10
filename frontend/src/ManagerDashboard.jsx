@@ -1,52 +1,64 @@
 import { useEffect, useState } from "react";
+import API_URL from "./api";
 
-function ManagerExpenseDashboard() {
+function ManagerDashboard() {
+  const [requests, setRequests] = useState([]);
   const [expenses, setExpenses] = useState([]);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [showRequests, setShowRequests] = useState(false);
+  const [updatingId, setUpdatingId] = useState(null);
 
-  const fetchExpenses = async () => {
+  const getAuthHeaders = () => ({
+    Authorization: `Bearer ${localStorage.getItem("corproute-token") || ""}`,
+  });
+
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
       setError("");
 
-      const response = await fetch(
-        "http://localhost:5000/api/expenses"
-      );
+      const [requestsResponse, expensesResponse] = await Promise.all([
+        fetch(`${API_URL}/api/travel-requests`, {
+          headers: getAuthHeaders(),
+        }),
+        fetch(`${API_URL}/api/expenses`, {
+          headers: getAuthHeaders(),
+        }),
+      ]);
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch expenses");
+      if (!requestsResponse.ok || !expensesResponse.ok) {
+        throw new Error("Failed to fetch dashboard data.");
       }
 
-      const data = await response.json();
-      setExpenses(data);
+      const requestsData = await requestsResponse.json();
+      const expensesData = await expensesResponse.json();
+
+      setRequests(Array.isArray(requestsData) ? requestsData : []);
+      setExpenses(Array.isArray(expensesData) ? expensesData : []);
     } catch (err) {
+      console.error(err);
       setError(
-        "Unable to load expenses. Make sure the backend is running."
+        err.message ||
+          "Unable to load dashboard data. Make sure the backend is running."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchExpenses();
-  }, []);
-
-  const updateExpenseStatus = async (id, status) => {
+  const updateRequestStatus = async (requestId, status) => {
     try {
-      setMessage("");
+      setUpdatingId(requestId);
       setError("");
 
       const response = await fetch(
-        `http://localhost:5000/api/expenses/${id}/status`,
+        `${API_URL}/api/travel-requests/${requestId}/status`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            ...getAuthHeaders(),
           },
           body: JSON.stringify({ status }),
         }
@@ -55,44 +67,43 @@ function ManagerExpenseDashboard() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Failed to update expense.");
-        return;
+        throw new Error(
+          data.message || "Failed to update request status."
+        );
       }
 
-      setMessage(`Expense ${status.toLowerCase()} successfully.`);
-
-      fetchExpenses();
+      setRequests((previous) =>
+        previous.map((request) =>
+          request.id === requestId ? { ...request, status } : request
+        )
+      );
     } catch (err) {
-      setError("Unable to update expense status.");
+      console.error(err);
+      setError(err.message || "Unable to update request status.");
+    } finally {
+      setUpdatingId(null);
     }
   };
 
-  const filteredExpenses = expenses.filter((expense) => {
-    const searchText = search.toLowerCase();
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
-    const matchesSearch =
-      expense.employeeName
-        .toLowerCase()
-        .includes(searchText) ||
-      expense.destination
-        .toLowerCase()
-        .includes(searchText) ||
-      expense.category
-        .toLowerCase()
-        .includes(searchText) ||
-      expense.travelRequestId
-        .toLowerCase()
-        .includes(searchText);
+  const pendingRequests = requests.filter(
+    (request) =>
+      String(request.status || "Pending").toLowerCase() === "pending"
+  );
 
-    const matchesStatus =
-      statusFilter === "All" ||
-      expense.status === statusFilter;
+  const approvedRequests = requests.filter(
+    (request) => request.status === "Approved"
+  );
 
-    return matchesSearch && matchesStatus;
-  });
+  const rejectedRequests = requests.filter(
+    (request) => request.status === "Rejected"
+  );
 
-  const totalAmount = expenses.reduce(
-    (sum, expense) => sum + Number(expense.amount),
+  const totalExpenses = expenses.reduce(
+    (sum, expense) => sum + Number(expense.amount || 0),
     0
   );
 
@@ -108,260 +119,353 @@ function ManagerExpenseDashboard() {
     (expense) => expense.status === "Rejected"
   );
 
-  const pendingAmount = pendingExpenses.reduce(
-    (sum, expense) => sum + Number(expense.amount),
+  const approvedExpenseAmount = approvedExpenses.reduce(
+    (sum, expense) => sum + Number(expense.amount || 0),
     0
   );
 
-  const approvedAmount = approvedExpenses.reduce(
-    (sum, expense) => sum + Number(expense.amount),
+  const pendingExpenseAmount = pendingExpenses.reduce(
+    (sum, expense) => sum + Number(expense.amount || 0),
     0
   );
 
-  const rejectedAmount = rejectedExpenses.reduce(
-    (sum, expense) => sum + Number(expense.amount),
-    0
-  );
+  const recentRequests = [...requests]
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+    )
+    .slice(0, 5);
+
+  const renderRequestCard = (request) => {
+    const status = request.status || "Pending";
+    const isPending = status.toLowerCase() === "pending";
+    const isUpdating = updatingId === request.id;
+
+    return (
+      <div className="manager-request-card" key={request.id}>
+        <div
+          className="request-card-main"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "16px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <span className="expense-category">
+              {request.destination || "Destination not provided"}
+            </span>
+
+            <h2 style={{ margin: "12px 0 8px" }}>
+              {request.employeeName || "Employee"}
+            </h2>
+
+            <p style={{ margin: 0, color: "#64748b" }}>
+              {request.purpose || "No purpose provided"}
+            </p>
+          </div>
+
+          <span className={`expense-status ${status.toLowerCase()}`}>
+            {status}
+          </span>
+        </div>
+
+        <div className="request-details">
+          <div>
+            <span>Departure</span>
+            <strong>
+              {request.departureDate
+                ? new Date(request.departureDate).toLocaleDateString()
+                : "N/A"}
+            </strong>
+          </div>
+
+          <div>
+            <span>Return</span>
+            <strong>
+              {request.returnDate
+                ? new Date(request.returnDate).toLocaleDateString()
+                : "N/A"}
+            </strong>
+          </div>
+
+          <div>
+            <span>Budget</span>
+            <strong>
+              ₹{Number(request.budget || 0).toLocaleString("en-IN")}
+            </strong>
+          </div>
+
+          <div>
+            <span>Request ID</span>
+            <strong>#{String(request.id || "").slice(0, 8) || "N/A"}</strong>
+          </div>
+        </div>
+
+        {isPending && (
+          <div
+            style={{
+              display: "flex",
+              gap: "12px",
+              flexWrap: "wrap",
+              marginTop: "24px",
+              paddingTop: "18px",
+              borderTop: "1px solid #e5e7eb",
+            }}
+          >
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => updateRequestStatus(request.id, "Approved")}
+              style={buttonStyle("#16a34a", isUpdating)}
+            >
+              {isUpdating ? "Updating..." : "✅ Approve"}
+            </button>
+
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={() => updateRequestStatus(request.id, "Rejected")}
+              style={buttonStyle("#dc2626", isUpdating)}
+            >
+              {isUpdating ? "Updating..." : "❌ Reject"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (showRequests) {
+    return (
+      <div className="manager-dashboard-page">
+        <div className="page-header">
+          <div>
+            <span className="page-label">MANAGER</span>
+            <h1>Travel Requests</h1>
+            <p>Overview of employee travel requests.</p>
+          </div>
+
+          <button
+            className="refresh-btn"
+            onClick={fetchDashboardData}
+            disabled={loading}
+          >
+            🔄 Refresh
+          </button>
+        </div>
+
+        {error && <div className="error-message">❌ {error}</div>}
+
+        <button
+          type="button"
+          onClick={() => setShowRequests(false)}
+          style={{
+            marginBottom: "20px",
+            padding: "10px 16px",
+            border: "none",
+            borderRadius: "8px",
+            background: "#eef2ff",
+            color: "#3158c9",
+            fontWeight: "600",
+            cursor: "pointer",
+          }}
+        >
+          ← Back to Dashboard
+        </button>
+
+        {loading ? (
+          <div className="empty-state">
+            <h2>Loading travel requests...</h2>
+          </div>
+        ) : requests.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📋</div>
+            <h2>No travel requests yet</h2>
+          </div>
+        ) : (
+          <div className="manager-request-list">
+            {requests.map(renderRequestCard)}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="manager-expense-page">
-
-      {/* HEADER */}
+    <div className="manager-dashboard-page">
       <div className="page-header">
         <div>
-          <span className="page-label">
-            MANAGER
-          </span>
-
-          <h1>Expense Approval</h1>
-
+          <span className="page-label">MANAGER</span>
+          <h1>Manager Dashboard</h1>
           <p>
-            Review employee expenses and approve or reject
-            reimbursement requests.
+            Monitor travel requests, approvals, and employee expenses
+            from one place.
           </p>
         </div>
 
         <button
           className="refresh-btn"
-          onClick={fetchExpenses}
+          onClick={fetchDashboardData}
+          disabled={loading}
         >
           🔄 Refresh
         </button>
       </div>
 
-      {/* STATISTICS */}
-      <div className="expense-stats">
+      {error && <div className="error-message">❌ {error}</div>}
 
-        <div className="expense-stat-card">
-          <div className="stat-icon">💰</div>
-
-          <div>
-            <span>Total Expenses</span>
-            <h2>₹{totalAmount.toLocaleString()}</h2>
-            <small>{expenses.length} requests</small>
-          </div>
-        </div>
-
-        <div className="expense-stat-card">
-          <div className="stat-icon">⏳</div>
-
-          <div>
-            <span>Pending</span>
-            <h2>₹{pendingAmount.toLocaleString()}</h2>
-            <small>{pendingExpenses.length} requests</small>
-          </div>
-        </div>
-
-        <div className="expense-stat-card">
-          <div className="stat-icon">✅</div>
-
-          <div>
-            <span>Approved</span>
-            <h2>₹{approvedAmount.toLocaleString()}</h2>
-            <small>{approvedExpenses.length} requests</small>
-          </div>
-        </div>
-
-        <div className="expense-stat-card">
-          <div className="stat-icon">❌</div>
-
-          <div>
-            <span>Rejected</span>
-            <h2>₹{rejectedAmount.toLocaleString()}</h2>
-            <small>{rejectedExpenses.length} requests</small>
-          </div>
-        </div>
-
-      </div>
-
-      {/* MESSAGES */}
-      {message && (
-        <div className="success-message">
-          ✅ {message}
-        </div>
-      )}
-
-      {error && (
-        <div className="error-message">
-          ❌ {error}
-        </div>
-      )}
-
-      {/* FILTERS */}
-      <div className="expense-filters">
-
-        <input
-          type="text"
-          placeholder="🔍 Search employee, destination, category..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        <select
-          value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(e.target.value)
-          }
-        >
-          <option value="All">All Status</option>
-          <option value="Pending">Pending</option>
-          <option value="Approved">Approved</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-
-      </div>
-
-      {/* CONTENT */}
       {loading ? (
         <div className="empty-state">
-          <h2>Loading expenses...</h2>
-          <p>Please wait.</p>
-        </div>
-      ) : filteredExpenses.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon">💰</div>
-
-          <h2>No expenses found</h2>
-
-          <p>
-            There are no expenses matching your current
-            filters.
-          </p>
+          <h2>Loading dashboard...</h2>
+          <p>Please wait while we fetch the latest data.</p>
         </div>
       ) : (
-        <div className="manager-expense-list">
-
-          {filteredExpenses.map((expense) => (
-
-            <div
-              className="manager-expense-card"
-              key={expense.id}
-            >
-
-              {/* TOP */}
-              <div className="expense-card-top">
-
-                <div>
-                  <span className="expense-category">
-                    {expense.category}
-                  </span>
-
-                  <h2>
-                    ₹{Number(expense.amount).toLocaleString()}
-                  </h2>
-                </div>
-
-                <span
-                  className={`expense-status ${expense.status.toLowerCase()}`}
-                >
-                  {expense.status}
-                </span>
-
+        <>
+          <div className="dashboard-section">
+            <div className="section-heading">
+              <div>
+                <span className="page-label">TRAVEL</span>
+                <h2>Travel Request Overview</h2>
               </div>
-
-              {/* DETAILS */}
-              <div className="expense-details">
-
-                <div>
-                  <span>Employee</span>
-                  <strong>
-                    {expense.employeeName}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Destination</span>
-                  <strong>
-                    {expense.destination}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Expense Date</span>
-                  <strong>
-                    {new Date(
-                      expense.expenseDate
-                    ).toLocaleDateString()}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Travel Request</span>
-                  <strong>
-                    #{expense.travelRequestId.slice(0, 8)}
-                  </strong>
-                </div>
-
-              </div>
-
-              {/* DESCRIPTION */}
-              {expense.description && (
-                <div className="expense-description">
-                  <span>Description</span>
-                  <p>{expense.description}</p>
-                </div>
-              )}
-
-              {/* ACTIONS */}
-              {expense.status === "Pending" && (
-                <div className="expense-actions">
-
-                  <button
-                    className="approve-btn"
-                    onClick={() =>
-                      updateExpenseStatus(
-                        expense.id,
-                        "Approved"
-                      )
-                    }
-                  >
-                    ✅ Approve
-                  </button>
-
-                  <button
-                    className="reject-btn"
-                    onClick={() =>
-                      updateExpenseStatus(
-                        expense.id,
-                        "Rejected"
-                      )
-                    }
-                  >
-                    ❌ Reject
-                  </button>
-
-                </div>
-              )}
-
             </div>
 
-          ))}
+            <div className="expense-stats">
+              <div
+                className="expense-stat-card"
+                onClick={() => setShowRequests(true)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    setShowRequests(true);
+                  }
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                <div className="stat-icon">📋</div>
+                <div>
+                  <span>Total Requests</span>
+                  <h2>{requests.length}</h2>
+                  <small>Click to view requests</small>
+                </div>
+              </div>
 
-        </div>
+              <StatCard
+                icon="⏳"
+                label="Pending"
+                value={pendingRequests.length}
+                description="Awaiting approval"
+              />
+
+              <StatCard
+                icon="✅"
+                label="Approved"
+                value={approvedRequests.length}
+                description="Approved trips"
+              />
+
+              <StatCard
+                icon="❌"
+                label="Rejected"
+                value={rejectedRequests.length}
+                description="Rejected requests"
+              />
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-heading">
+              <div>
+                <span className="page-label">EXPENSES</span>
+                <h2>Expense Overview</h2>
+              </div>
+            </div>
+
+            <div className="expense-stats">
+              <StatCard
+                icon="💰"
+                label="Total Expenses"
+                value={`₹${totalExpenses.toLocaleString("en-IN")}`}
+                description={`${expenses.length} expenses`}
+              />
+
+              <StatCard
+                icon="⏳"
+                label="Pending Amount"
+                value={`₹${pendingExpenseAmount.toLocaleString("en-IN")}`}
+                description={`${pendingExpenses.length} pending`}
+              />
+
+              <StatCard
+                icon="✅"
+                label="Approved Amount"
+                value={`₹${approvedExpenseAmount.toLocaleString("en-IN")}`}
+                description={`${approvedExpenses.length} approved`}
+              />
+
+              <StatCard
+                icon="📊"
+                label="Expense Requests"
+                value={expenses.length}
+                description={`${rejectedExpenses.length} rejected`}
+              />
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-heading">
+              <div>
+                <span className="page-label">RECENT ACTIVITY</span>
+                <h2>Recent Travel Requests</h2>
+              </div>
+            </div>
+
+            {recentRequests.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">📋</div>
+                <h2>No travel requests yet</h2>
+                <p>Travel requests submitted by employees appear here.</p>
+              </div>
+            ) : (
+              <div className="manager-request-list">
+                {recentRequests.map(renderRequestCard)}
+              </div>
+            )}
+          </div>
+        </>
       )}
-
     </div>
   );
 }
 
-export default ManagerExpenseDashboard;
+function StatCard({ icon, label, value, description }) {
+  return (
+    <div className="expense-stat-card">
+      <div className="stat-icon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <h2>{value}</h2>
+        <small>{description}</small>
+      </div>
+    </div>
+  );
+}
+
+function buttonStyle(background, disabled) {
+  return {
+    background,
+    color: "#ffffff",
+    border: "none",
+    padding: "12px 22px",
+    borderRadius: "8px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontWeight: "600",
+    fontSize: "15px",
+    opacity: disabled ? 0.6 : 1,
+  };
+}
+
+export default ManagerDashboard;

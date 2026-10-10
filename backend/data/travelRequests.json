@@ -62,7 +62,40 @@
     "departureDate": "2026-11-20",
     "returnDate": "2026-11-25",
     "budget": 20000,
-    "status": "Pending",
+    "status": "Approved",
     "createdAt": "2026-09-30T19:04:16.528Z"
+  },
+  {
+    "id": "064c9936-8252-4142-b794-141dd5a0bd02",
+    "employeeName": "sreenu",
+    "destination": "Mumbai",
+    "purpose": "business meeting",
+    "departureDate": "2026-10-20",
+    "returnDate": "2026-10-25",
+    "budget": 20000,
+    "status": "Rejected",
+    "createdAt": "2026-10-05T04:49:07.195Z"
+  },
+  {
+    "id": "55c36692-afe8-40b7-9f9f-db37a3b41b45",
+    "employeeName": "Meena",
+    "destination": "Bengaluru",
+    "purpose": "Meeting",
+    "departureDate": "2026-10-20",
+    "returnDate": "2026-10-23",
+    "budget": 5000,
+    "status": "Approved",
+    "createdAt": "2026-10-05T05:30:08.772Z"
+  },
+  {
+    "id": "6324d204-b616-49ac-ac5e-bcc286b27a67",
+    "employeeName": "Maansi Potedar",
+    "destination": "Bengaluru",
+    "purpose": "meeting",
+    "departureDate": "2026-10-19",
+    "returnDate": "2026-10-21",
+    "budget": 4998,
+    "status": "Approved",
+    "createdAt": "2026-10-10T08:47:37.877Z"
   }
 ]

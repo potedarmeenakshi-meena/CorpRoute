@@ -1,17 +1,24 @@
-import { useEffect, useState } from "react";
 
-function EmployeeDashboard() {
+import { useEffect, useState } from "react";
+import API_URL from "./api";
+
+function EmployeeDashboard({ userRole = "employee" }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [updatingId, setUpdatingId] = useState(null);
 
+  const isManager =
+    String(userRole).toLowerCase() === "manager";
+
+  // Fetch travel requests
   const fetchRequests = async () => {
     try {
       setLoading(true);
       setError("");
 
       const response = await fetch(
-        "http://localhost:5000/api/travel-requests"
+        `${API_URL}/api/travel-requests`
       );
 
       if (!response.ok) {
@@ -22,7 +29,6 @@ function EmployeeDashboard() {
       setRequests(data);
     } catch (err) {
       console.error("Fetch error:", err);
-
       setError(
         "Unable to connect to the backend. Please check your server."
       );
@@ -35,11 +41,55 @@ function EmployeeDashboard() {
     fetchRequests();
   }, []);
 
-  // Count request statuses
+  // Approve or reject a travel request
+  const updateRequestStatus = async (requestId, status) => {
+    try {
+      setUpdatingId(requestId);
+      setError("");
+
+      const response = await fetch(
+        `${API_URL}/api/travel-requests/${requestId}/status`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Unable to update request status"
+        );
+      }
+
+      setRequests((previousRequests) =>
+        previousRequests.map((request) =>
+          request.id === requestId
+            ? { ...request, status }
+            : request
+        )
+      );
+    } catch (err) {
+      console.error("Status update error:", err);
+      setError(
+        err.message || "Unable to update request status"
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Request statistics
   const totalRequests = requests.length;
 
   const pendingRequests = requests.filter(
-    (request) => request.status === "Pending"
+    (request) =>
+      String(request.status || "Pending").toLowerCase() ===
+      "pending"
   ).length;
 
   const approvedRequests = requests.filter(
@@ -76,15 +126,19 @@ function EmployeeDashboard() {
 
   return (
     <div className="employee-dashboard">
-
-      {/* ================= HEADER ================= */}
-
+      {/* HEADER */}
       <div className="dashboard-header">
         <div>
-          <h1>My Travel Requests ✈️</h1>
+          <h1>
+            {isManager
+              ? "All Travel Requests ✈️"
+              : "My Travel Requests ✈️"}
+          </h1>
 
           <p>
-            Track your corporate travel requests and approval status.
+            {isManager
+              ? "Review employee travel requests and approve or reject them."
+              : "Track your corporate travel requests and approval status."}
           </p>
         </div>
 
@@ -97,71 +151,11 @@ function EmployeeDashboard() {
         </button>
       </div>
 
-      {/* ================= STATISTICS ================= */}
-
-      {!loading && !error && (
-        <div className="stats-grid">
-
-          {/* Total */}
-          <div className="stat-card">
-            <div className="stat-icon">📋</div>
-
-            <div>
-              <p>Total Requests</p>
-              <h2>{totalRequests}</h2>
-            </div>
-          </div>
-
-          {/* Pending */}
-          <div className="stat-card">
-            <div className="stat-icon pending-icon">⏳</div>
-
-            <div>
-              <p>Pending</p>
-              <h2>{pendingRequests}</h2>
-            </div>
-          </div>
-
-          {/* Approved */}
-          <div className="stat-card">
-            <div className="stat-icon approved-icon">✅</div>
-
-            <div>
-              <p>Approved</p>
-              <h2>{approvedRequests}</h2>
-            </div>
-          </div>
-
-          {/* Rejected */}
-          <div className="stat-card">
-            <div className="stat-icon rejected-icon">❌</div>
-
-            <div>
-              <p>Rejected</p>
-              <h2>{rejectedRequests}</h2>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* ================= LOADING ================= */}
-
-      {loading && (
-        <div className="dashboard-message">
-          <div className="loading-spinner"></div>
-          <p>Loading your travel requests...</p>
-        </div>
-      )}
-
-      {/* ================= ERROR ================= */}
-
+      {/* ERROR */}
       {error && (
-        <div className="dashboard-error">
+        <div className="dashboard-error" role="alert">
           <div className="error-icon">⚠️</div>
-
-          <h3>Unable to load requests</h3>
-
+          <h3>Notice</h3>
           <p>{error}</p>
 
           <button
@@ -173,35 +167,77 @@ function EmployeeDashboard() {
         </div>
       )}
 
-      {/* ================= EMPTY STATE ================= */}
+      {/* STATISTICS */}
+      {!loading && !error && (
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-icon">📋</div>
+            <div>
+              <p>Total Requests</p>
+              <h2>{totalRequests}</h2>
+            </div>
+          </div>
 
-      {!loading && !error && requests.length === 0 && (
-        <div className="empty-state">
+          <div className="stat-card">
+            <div className="stat-icon pending-icon">⏳</div>
+            <div>
+              <p>Pending</p>
+              <h2>{pendingRequests}</h2>
+            </div>
+          </div>
 
-          <div className="empty-icon">✈️</div>
+          <div className="stat-card">
+            <div className="stat-icon approved-icon">✅</div>
+            <div>
+              <p>Approved</p>
+              <h2>{approvedRequests}</h2>
+            </div>
+          </div>
 
-          <h3>No Travel Requests Yet</h3>
-
-          <p>
-            You haven't submitted any travel requests.
-            Create a new request to get started.
-          </p>
-
+          <div className="stat-card">
+            <div className="stat-icon rejected-icon">❌</div>
+            <div>
+              <p>Rejected</p>
+              <h2>{rejectedRequests}</h2>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ================= REQUESTS ================= */}
+      {/* LOADING */}
+      {loading && (
+        <div className="dashboard-message">
+          <div className="loading-spinner"></div>
+          <p>Loading travel requests...</p>
+        </div>
+      )}
 
+      {/* EMPTY STATE */}
+      {!loading && !error && requests.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-icon">✈️</div>
+          <h3>No Travel Requests Yet</h3>
+          <p>
+            No travel requests have been submitted yet.
+          </p>
+        </div>
+      )}
+
+      {/* REQUESTS */}
       {!loading && !error && requests.length > 0 && (
         <div className="requests-section">
-
           <div className="section-heading">
             <div>
-              <h2>Travel Request History</h2>
+              <h2>
+                {isManager
+                  ? "Employee Travel Requests"
+                  : "Travel Request History"}
+              </h2>
 
               <p>
-                View your submitted travel requests and their
-                current status.
+                {isManager
+                  ? "Review requests and take action on pending trips."
+                  : "View your submitted travel requests and their current status."}
               </p>
             </div>
 
@@ -212,116 +248,176 @@ function EmployeeDashboard() {
           </div>
 
           <div className="request-grid">
+            {requests.map((request) => {
+              const status = request.status || "Pending";
 
-            {requests.map((request) => (
-              <div
-                className="request-card"
-                key={request.id}
-              >
+              const isPending =
+                status.toLowerCase() === "pending";
 
-                {/* Card Header */}
-                <div className="request-card-header">
+              const isUpdating =
+                updatingId === request.id;
 
-                  <div>
-                    <span className="request-label">
-                      Travel Request
+              return (
+                <div
+                  className="request-card"
+                  key={request.id}
+                >
+                  {/* CARD HEADER */}
+                  <div className="request-card-header">
+                    <div>
+                      <span className="request-label">
+                        Travel Request
+                      </span>
+
+                      <h3>{request.destination}</h3>
+                    </div>
+
+                    <span
+                      className={`status-badge ${getStatusClass(status)}`}
+                    >
+                      {status === "Approved" && "✓ "}
+                      {status === "Rejected" && "✕ "}
+                      {isPending && "● "}
+                      {status}
                     </span>
-
-                    <h3>{request.destination}</h3>
                   </div>
 
-                  <span
-                    className={`status-badge ${getStatusClass(
-                      request.status
-                    )}`}
-                  >
-                    {request.status === "Approved" && "✓ "}
-                    {request.status === "Rejected" && "✕ "}
-                    {request.status === "Pending" && "● "}
-                    {request.status}
-                  </span>
+                  {/* REQUEST ID */}
+                  <div className="request-id">
+                    Request ID:{" "}
+                    <strong>{request.id}</strong>
+                  </div>
 
+                  {/* REQUEST DETAILS */}
+                  <div className="request-details">
+                    <div className="detail-item">
+                      <span className="detail-icon">👤</span>
+                      <div>
+                        <small>Employee</small>
+                        <strong>
+                          {request.employeeName}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="detail-item">
+                      <span className="detail-icon">🎯</span>
+                      <div>
+                        <small>Purpose</small>
+                        <strong>{request.purpose}</strong>
+                      </div>
+                    </div>
+
+                    <div className="detail-item">
+                      <span className="detail-icon">📅</span>
+                      <div>
+                        <small>Departure</small>
+                        <strong>
+                          {formatDate(request.departureDate)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="detail-item">
+                      <span className="detail-icon">🏠</span>
+                      <div>
+                        <small>Return</small>
+                        <strong>
+                          {formatDate(request.returnDate)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="detail-item budget-item">
+                      <span className="detail-icon">💰</span>
+                      <div>
+                        <small>Estimated Budget</small>
+                        <strong>
+                          ₹
+                          {Number(
+                            request.budget || 0
+                          ).toLocaleString("en-IN")}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* MANAGER APPROVAL BUTTONS */}
+                  {isManager && isPending && (
+                    <div
+                      className="request-actions"
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        marginTop: "24px",
+                        paddingTop: "18px",
+                        borderTop: "1px solid #e5e7eb",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() =>
+                          updateRequestStatus(
+                            request.id,
+                            "Approved"
+                          )
+                        }
+                        style={{
+                          backgroundColor: "#16a34a",
+                          color: "#ffffff",
+                          border: "none",
+                          padding: "12px 22px",
+                          borderRadius: "8px",
+                          cursor: isUpdating
+                            ? "not-allowed"
+                            : "pointer",
+                          fontWeight: "600",
+                          fontSize: "15px",
+                          opacity: isUpdating ? 0.6 : 1,
+                        }}
+                      >
+                        {isUpdating
+                          ? "Updating..."
+                          : "✅ Approve"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() =>
+                          updateRequestStatus(
+                            request.id,
+                            "Rejected"
+                          )
+                        }
+                        style={{
+                          backgroundColor: "#dc2626",
+                          color: "#ffffff",
+                          border: "none",
+                          padding: "12px 22px",
+                          borderRadius: "8px",
+                          cursor: isUpdating
+                            ? "not-allowed"
+                            : "pointer",
+                          fontWeight: "600",
+                          fontSize: "15px",
+                          opacity: isUpdating ? 0.6 : 1,
+                        }}
+                      >
+                        {isUpdating
+                          ? "Updating..."
+                          : "❌ Reject"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-
-                {/* Request ID */}
-                <div className="request-id">
-                  Request ID:{" "}
-                  <strong>
-                    {request.id}
-                  </strong>
-                </div>
-
-                {/* Request Details */}
-                <div className="request-details">
-
-                  <div className="detail-item">
-                    <span className="detail-icon">👤</span>
-
-                    <div>
-                      <small>Employee</small>
-                      <strong>
-                        {request.employeeName}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="detail-item">
-                    <span className="detail-icon">🎯</span>
-
-                    <div>
-                      <small>Purpose</small>
-                      <strong>
-                        {request.purpose}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="detail-item">
-                    <span className="detail-icon">📅</span>
-
-                    <div>
-                      <small>Departure</small>
-                      <strong>
-                        {formatDate(request.departureDate)}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="detail-item">
-                    <span className="detail-icon">🏠</span>
-
-                    <div>
-                      <small>Return</small>
-                      <strong>
-                        {formatDate(request.returnDate)}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="detail-item budget-item">
-                    <span className="detail-icon">💰</span>
-
-                    <div>
-                      <small>Estimated Budget</small>
-
-                      <strong>
-                        ₹
-                        {Number(
-                          request.budget
-                        ).toLocaleString("en-IN")}
-                      </strong>
-                    </div>
-                  </div>
-
-                </div>
-
-              </div>
-            ))}
-
+              );
+            })}
           </div>
         </div>
       )}
-
     </div>
   );
 }

@@ -10,5 +10,29 @@
     "description": "flight charges from htd-blr",
     "status": "Approved",
     "createdAt": "2026-09-30T19:18:55.959Z"
+  },
+  {
+    "id": "939e803c-3712-423c-996a-e463d6085c83",
+    "travelRequestId": "39cc128d-8876-457f-b974-134f441d8ab7",
+    "employeeName": "Meenakshi",
+    "destination": "Bengaluru",
+    "category": "Hotel",
+    "amount": 1000,
+    "expenseDate": "2026-10-21",
+    "description": "hotel is just for one night,as rest staying is in the guest house for free for the next 4 days",
+    "status": "Rejected",
+    "createdAt": "2026-10-05T05:35:14.742Z"
+  },
+  {
+    "id": "c81af04a-73dd-4c7c-8ceb-1ade2708028b",
+    "travelRequestId": "6324d204-b616-49ac-ac5e-bcc286b27a67",
+    "employeeName": "Maansi Potedar",
+    "destination": "Bengaluru",
+    "category": "Flight",
+    "amount": 4000,
+    "expenseDate": "2026-10-19",
+    "description": "travel amount for both up and down ",
+    "status": "Approved",
+    "createdAt": "2026-10-10T11:40:11.180Z"
   }
 ]
