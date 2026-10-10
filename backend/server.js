@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 
 const express = require("express");
@@ -11,7 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-  throw new Error("JWT_SECRET must be configured with at least 32 characters in .env");
+  throw new Error("JWT_SECRET must be configured with at least 32 characters.");
 }
 
 const pool = mysql.createPool({
@@ -23,6 +24,11 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   dateStrings: true,
+
+  // TiDB Cloud requires a secure TLS connection.
+  ssl: process.env.DB_HOST === "localhost"
+    ? undefined
+    : { minVersion: "TLSv1.2" },
 });
 
 app.use(cors());
@@ -150,11 +156,15 @@ function allowRoles(...roles) {
 }
 
 // =====================================================
-// HOME
+// HOME / HEALTH CHECK
 // =====================================================
 
 app.get("/", (req, res) => {
   res.send("CorpRoute Backend is Running!");
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", service: "CorpRoute Backend" });
 });
 
 // =====================================================
@@ -235,7 +245,7 @@ app.post("/api/register", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    console.error("Registration error:", error.message);
 
     return res.status(500).json({
       message: "Unable to create account.",
@@ -244,7 +254,7 @@ app.post("/api/register", async (req, res) => {
 });
 
 // =====================================================
-// LOGIN — RETURNS BOTH TOKEN AND USER
+// LOGIN
 // =====================================================
 
 app.post("/api/login", async (req, res) => {
@@ -286,7 +296,6 @@ app.post("/api/login", async (req, res) => {
     if (storedPassword.startsWith("$2")) {
       passwordMatches = await bcrypt.compare(password, storedPassword);
     } else {
-      // Upgrade an existing plain-text password to a bcrypt hash.
       passwordMatches = storedPassword === password;
 
       if (passwordMatches) {
@@ -324,7 +333,7 @@ app.post("/api/login", async (req, res) => {
       user: mapUser(user),
     });
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Login error:", error.message);
 
     return res.status(500).json({
       message: "Unable to login.",
@@ -344,7 +353,7 @@ app.get("/api/travel-requests", async (req, res) => {
 
     return res.json(rows.map(mapRequest));
   } catch (error) {
-    console.error("Fetch travel requests error:", error);
+    console.error("Fetch travel requests error:", error.message);
 
     return res.status(500).json({
       message: "Unable to fetch travel requests.",
@@ -428,7 +437,7 @@ app.post("/api/travel-requests", async (req, res) => {
       request: mapRequest(rows[0]),
     });
   } catch (error) {
-    console.error("Create travel request error:", error);
+    console.error("Create travel request error:", error.message);
 
     return res.status(500).json({
       message: "Unable to submit travel request.",
@@ -478,7 +487,7 @@ app.put(
         request: mapRequest(rows[0]),
       });
     } catch (error) {
-      console.error("Update travel request error:", error);
+      console.error("Update travel request error:", error.message);
 
       return res.status(500).json({
         message: "Unable to update request status.",
@@ -502,7 +511,7 @@ app.get("/api/expenses", async (req, res) => {
 
     return res.json(rows.map(mapExpense));
   } catch (error) {
-    console.error("Fetch expenses error:", error);
+    console.error("Fetch expenses error:", error.message);
 
     return res.status(500).json({
       message: "Unable to fetch expenses.",
@@ -602,7 +611,7 @@ app.post("/api/expenses", async (req, res) => {
       expense: mapExpense(rows[0]),
     });
   } catch (error) {
-    console.error("Create expense error:", error);
+    console.error("Create expense error:", error.message);
 
     return res.status(500).json({
       message: "Unable to submit expense.",
@@ -662,7 +671,7 @@ app.put(
         expense: mapExpense(rows[0]),
       });
     } catch (error) {
-      console.error("Update expense status error:", error);
+      console.error("Update expense status error:", error.message);
 
       return res.status(500).json({
         message: "Unable to update expense status.",
@@ -676,18 +685,22 @@ app.put(
 // =====================================================
 
 async function startServer() {
+  let connection;
+
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
     await connection.ping();
-    connection.release();
+
+    console.log("MySQL/TiDB connected successfully.");
 
     app.listen(PORT, "0.0.0.0", () => {
-      console.log("MySQL connected successfully.");
       console.log(`CorpRoute backend running on port ${PORT}`);
     });
   } catch (error) {
     console.error("Could not connect to MySQL:", error.message);
     process.exit(1);
+  } finally {
+    if (connection) connection.release();
   }
 }
 
